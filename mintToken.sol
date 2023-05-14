@@ -2,74 +2,76 @@
 
 pragma solidity ^0.8.0;
 
-contract MyToken {
-    string private _name;
-    string private _symbol;
-    uint256 private _totalSupply;
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 
-    constructor(string memory name_, string memory symbol_, uint256 totalSupply_) {
-        _name = name_;
-        _symbol = symbol_;
-        _totalSupply = totalSupply_;
-        balanceOf[msg.sender] = totalSupply_;
+contract MyToken is ERC20, Ownable, Pausable {
+    uint8 private _decimals;
+
+    mapping(address => bool) private _blacklist;
+
+    constructor(
+        string memory name_,
+        string memory symbol_,
+        uint256 initialSupply_,
+        uint8 decimals_
+    ) ERC20(name_, symbol_) {
+        _decimals = decimals_;
+        _mint(msg.sender, initialSupply_ * 10**decimals_);
     }
 
-    function name() public view returns (string memory) {
-        return _name;
+    function decimals() public view virtual override returns (uint8) {
+        return _decimals;
     }
 
-    function symbol() public view returns (string memory) {
-        return _symbol;
+    function setDecimals(uint8 decimals_) public onlyOwner {
+        _decimals = decimals_;
     }
 
-    function totalSupply() public view returns (uint256) {
-        return _totalSupply;
+    function mint(address account, uint256 amount) public onlyOwner {
+        _mint(account, amount);
     }
 
-    function transfer(address to, uint256 value) public returns (bool success) {
-        require(balanceOf[msg.sender] >= value, "Insufficient balance");
-        balanceOf[msg.sender] -= value;
-        balanceOf[to] += value;
-        emit Transfer(msg.sender, to, value);
-        return true;
+    function burn(address account, uint256 amount) public onlyOwner {
+        _burn(account, amount);
     }
 
-    function approve(address spender, uint256 value) public returns (bool success) {
-        allowance[msg.sender][spender] = value;
-        emit Approval(msg.sender, spender, value);
-        return true;
+    function pause() public onlyOwner {
+        _pause();
     }
 
-    function transferFrom(address from, address to, uint256 value) public returns (bool success) {
-        require(balanceOf[from] >= value, "Insufficient balance");
-        require(allowance[from][msg.sender] >= value, "Not authorized");
-        balanceOf[from] -= value;
-        balanceOf[to] += value;
-        allowance[from][msg.sender] -= value;
-        emit Transfer(from, to, value);
-        return true;
+    function unpause() public onlyOwner {
+        _unpause();
     }
 
-    function mint(uint256 amount) public {
-        _totalSupply += amount;
-        balanceOf[msg.sender] += amount;
-        emit Transfer(address(0), msg.sender, amount);
+    function blacklist(address account) public onlyOwner {
+        _blacklist[account] = true;
     }
 
-    event Transfer(address indexed from, address indexed to, uint256 value);
-    event Approval(address indexed owner, address indexed spender, uint256 value);
-
-    function setName(string memory name_) public {
-        _name = name_;
+    function isBlacklisted(address account) public view returns (bool) {
+        return _blacklist[account];
     }
 
-    function setSymbol(string memory symbol_) public {
-        _symbol = symbol_;
+    function transfer(address recipient, uint256 amount)
+        public
+        virtual
+        override
+        whenNotPaused
+        returns (bool)
+    {
+        require(!isBlacklisted(msg.sender), "Sender is blacklisted");
+        require(!isBlacklisted(recipient), "Recipient is blacklisted");
+        super.transfer(recipient, amount);
     }
 
-    function setTotalSupply(uint256 totalSupply_) public {
-        _totalSupply = totalSupply_;
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) public virtual override whenNotPaused returns (bool) {
+        require(!isBlacklisted(sender), "Sender is blacklisted");
+        require(!isBlacklisted(recipient), "Recipient is blacklisted");
+        super.transferFrom(sender, recipient, amount);
     }
 }
